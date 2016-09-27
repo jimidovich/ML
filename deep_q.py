@@ -60,14 +60,14 @@ def multilayer_nn(x, w, b):
 
 
 def train_nn(mode=None):
-    prod = 'rb'
+    prod = 'ag'
     prod_type = 'fut'
 
     df = load_time_series(prod, prod_type)
     states = make_states(df)
-    states = states[-400:, :]
+    # states = states[-400:, :]
     ret = pd.Series(states[0, :]).pct_change().shift(-1)
-    n_train = int(states.shape[0] * 0.99)
+    n_train = int(states.shape[0] * 0.9)
     # n_test = states.shape[0] - n_train
 
     n_input = states.shape[1]
@@ -82,7 +82,7 @@ def train_nn(mode=None):
         epochs = 1
         epsilon = 0.0
     else:
-        epochs = 2000
+        epochs = 10000
         epsilon = 1.0
 
     with tf.name_scope('Training_Data'):
