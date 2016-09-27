@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 import matplotlib.pylab as plt
+
 from ml_fi import read_local_data
 import add_feature as af
 import performance as pf
