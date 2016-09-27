@@ -1,9 +1,9 @@
 import sys
 import time
+import random
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-import random
 import matplotlib.pylab as plt
 from ml_fi import read_local_data
 import add_feature as af
