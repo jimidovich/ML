@@ -15,18 +15,6 @@ def load_time_series(prod, prod_type='fut', freq='d1'):
     return read_local_data(prod, prod_type, freq).ix[:, :'close']
 
 
-def make_time_series_states(df):
-    '''price as state elements'''
-    df = af.add_hist_price(df, n=[1, 2, 3, 4])
-    df = af.add_hist_avg(df, 5, 10)
-    df = af.add_hist_avg(df, 10, 20)
-    df = af.add_hist_avg(df, 20, 40)
-    df = af.add_hist_avg(df, 40, 80)
-    df = af.add_hist_avg(df, 80, 160)
-    df['equity'] = 100.0
-    return df.ix[:, 'close':].dropna().values
-
-
 def make_states(df):
     df = af.add_roc(df, n=[1, 2, 3, 4, 5])
     df = af.add_hist_avg(df, 5, 10)
@@ -97,12 +85,12 @@ def train_nn(mode=None):
          'b2': bias_variable([n_h2], name='b_h2'),
          'out': bias_variable([n_classes], name='b_out')}
     pred = multilayer_nn(x, w, b)
-    # cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(pred, y))
-    pred_action = tf.reduce_sum(tf.mul(pred, a), reduction_indices=1)
-    cost = tf.reduce_mean(tf.square(y - pred_action))
-    tf.scalar_summary('cost', cost)
-    optimizer = tf.train.AdamOptimizer().minimize(cost)
-    # optimizer = tf.train.GradientDescentOptimizer(0.01).minimize(cost)
+    # loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(pred, y))
+    pred_qmax = tf.reduce_sum(tf.mul(pred, a), reduction_indices=1)
+    loss = tf.reduce_mean(tf.square(y - pred_qmax))
+    tf.scalar_summary('loss', loss)
+    optimizer = tf.train.AdamOptimizer().minimize(loss)
+    # optimizer = tf.train.GradientDescentOptimizer(0.01).minimize(loss)
     init = tf.initialize_all_variables()
 
     display_step = 1
@@ -124,7 +112,7 @@ def train_nn(mode=None):
         for epoch in range(epochs):
             start_time = time.time()
             states[:, -1] = 100
-            avg_cost = 0.0
+            avg_loss = 0.0
             alist = []
             reward = []
             for t in range(n_train - 1):
@@ -151,11 +139,11 @@ def train_nn(mode=None):
                     next_q = pred.eval(feed_dict={x: states[next_t, :]})
                     y_batch = [reward[i] for i in minibatch] +\
                         gamma*np.max(next_q, axis=1)
-                    _, c = sess.run([optimizer, cost], feed_dict={
+                    _, c = sess.run([optimizer, loss], feed_dict={
                         x: states[minibatch, :],
                         a: [alist[i] for i in minibatch],
                         y: y_batch})
-                    avg_cost += c / (t + 1)
+                    avg_loss += c / (t + 1)
                     if t == n_train-2:
                         result = sess.run(merged, feed_dict={
                             x: states[minibatch, :],
@@ -175,9 +163,9 @@ def train_nn(mode=None):
                 plt.show()
             end_time = time.time()
             if epoch % display_step == 0:
-                print('Epoch {}, cost={:.6f}, equity={:.2f},\
+                print('Epoch {}, loss={:.6f}, equity={:.2f},\
                       sh={:.4f}, time={}'.format(
-                          epoch, avg_cost, states[n_train-1, -1], sharpe,
+                          epoch, avg_loss, states[n_train-1, -1], sharpe,
                           end_time-start_time))
             if epoch % 100 == 1:
                 saver.save(sess, 'saved_networks/' + prod + '-dqn',
