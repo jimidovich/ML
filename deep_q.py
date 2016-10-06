@@ -39,11 +39,11 @@ def make_states(df):
 
 
 def weight_variable(shape, name):
-    return tf.Variable(tf.truncated_normal(shape, stddev=0.01), name=name)
+    return tf.Variable(tf.truncated_normal(shape, stddev=0.001), name=name)
 
 
 def bias_variable(shape, name):
-    return tf.Variable(tf.constant(0.01, shape=shape), name=name)
+    return tf.Variable(tf.constant(0.001, shape=shape), name=name)
 
 
 def multilayer_nn(x, w, b):
@@ -60,13 +60,13 @@ def multilayer_nn(x, w, b):
 
 
 def train_nn(mode=None):
-    prod = 'ag'
+    prod = 'au'
     prod_type = 'fut'
 
     df = load_time_series(prod, prod_type)
     states = make_states(df)
     # states = states[-400:, :]
-    ret = pd.Series(states[0, :]).pct_change().shift(-1)
+    # ret = pd.Series(states[0, :]).pct_change().shift(-1)
     n_train = int(states.shape[0] * 0.9)
     # n_test = states.shape[0] - n_train
 
@@ -134,6 +134,10 @@ def train_nn(mode=None):
                 else:
                     a_idx = np.argmax(q)
                 a_t[a_idx] = 1
+                # preda = pred_action.eval(feed_dict={pred: q.reshape(1, 3),
+                #                                     a: a_t.reshape(1, 3)})
+                # print('q', q, 'a', a_t)
+                # print('pred-action', preda)
 
                 alist.append(a_t)
                 ret = states[t+1, 0]  # states[0] is roc_1
