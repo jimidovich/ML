@@ -118,7 +118,7 @@ def train_nn(mode=None):
             for t in range(n_train - 1):
                 q = pred.eval(feed_dict={x: [states[t, :]]})[0]
                 a_t = np.zeros([n_classes])
-                if (random.random() < epsilon):
+                if random.random() < epsilon:
                     a_idx = np.random.choice(n_classes)
                 else:
                     a_idx = np.argmax(q)
