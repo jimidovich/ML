@@ -18,13 +18,24 @@ def calc_tick(df):
         (df.bsize1 + df.asize1)
     df['centre_dist'] = df.centre - df['last']
     df['move_filter'] = df.centre_dist.apply(lambda x: x if abs(x) > 4 else 0)
-    df['cdiff_filter'] = df.centre.diff().apply(lambda x:
-                                                x if abs(x) > 1 else 0)
-    df['size_ratio'] = df.apply(lambda x: (x.bsize1-x.asize1) /
-                                min(x.bsize1, x.asize1), axis=1)
+    df['cdiff_filter'] = df.centre.diff().apply(
+        lambda x: x if abs(x) > 1 else 0)
+    df['size_ratio'] = df.apply(
+        lambda x: (x.bsize1-x.asize1) / min(x.bsize1, x.asize1), axis=1)
     df['size_filter'] = df.size_ratio.apply(lambda x: x if abs(x) > 10 else 0)
-    df['futret'] = df['last'].shift(-120)/df['last'] - 1
+    df['futret'] = df['last'].shift(-240)/df['last'] - 1
     return df
+
+
+def discretize(df):
+    df['centre_dist_bin'] = pd.qcut(df.centre_dist, 10)
+    df['size_ratio_bin'] = pd.qcut(df.size_ratio, 10)
+    return df
+
+
+def discrete_plot(df):
+    sns.violinplot(x=df.centre_dist_bin, y=df.futret, data=df)
+    plt.show()
 
 
 def exam_tick(df):
@@ -58,7 +69,7 @@ def exam_folder(folder='data_tick/IF/'):
             plt.savefig('tick_fig/reg_' + fname + '.svg')
 
 
-def join_folder(folder='data_tick/IF/'):
+def join_folder(folder='data_tick/rb/'):
     """exam all files in a folderectory"""
     df1 = pd.DataFrame()
     for fname in os.listdir(folder):
@@ -71,7 +82,9 @@ def join_folder(folder='data_tick/IF/'):
 def main():
     # plt.ion()
     df = join_folder()
-    exam_tick(df)
+    df.centre_dist.hist()
+    df.size_ratio.hist()
+    # exam_tick(df)
     plt.show()
     # plt.savefig('tick_fig/IF.svg')
 
