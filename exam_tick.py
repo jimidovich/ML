@@ -39,14 +39,16 @@ def discrete_plot(df):
 
 
 def exam_tick(df):
-    mask1 = df.size_filter != 0
-    mask2 = df.move_filter != 0
-    mask = mask1 & mask2
+    df = df.sort_values(by='centre_dist')
+    df = pd.concat([df[:10], df[-10:]])
+    # mask1 = df.size_filter != 0
+    # mask2 = df.move_filter != 0
+    # mask = mask1 & mask2
     # plt.scatter(df.size_filter[mask], df.roc_600[mask])
-    signal_ret = df[mask2].ix[:, ['move_filter', 'size_filter', 'futret']]
+    # signal_ret = df.ix[:, ['move_filter', 'size_filter', 'futret']]
     # signal_ret = pd.concat([df.size_filter[mask], df.futret[mask]], axis=1)
-    signal_ret.dropna(inplace=True)
-    sns.jointplot('move_filter', 'futret', data=signal_ret, kind='reg')
+    # signal_ret.dropna(inplace=True)
+    sns.jointplot('centre_dist', 'futret', data=df, kind='reg')
     # sns.pairplot(signal_ret, kind='reg')
 
     # df['move_filter'].plot()
