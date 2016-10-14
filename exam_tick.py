@@ -23,7 +23,7 @@ def calc_tick(df):
     df['size_ratio'] = df.apply(
         lambda x: (x.bsize1-x.asize1) / min(x.bsize1, x.asize1), axis=1)
     df['size_filter'] = df.size_ratio.apply(lambda x: x if abs(x) > 10 else 0)
-    df['futret'] = df['last'].shift(-240)/df['last'] - 1
+    df['futret'] = df['last'].shift(-120)/df['last'] - 1
     return df
 
 
@@ -38,9 +38,9 @@ def discrete_plot(df):
     plt.show()
 
 
-def exam_tick(df):
+def exam_tick(df, prod=None, top=100):
     df = df.sort_values(by='centre_dist')
-    df = pd.concat([df[:10], df[-10:]])
+    df = pd.concat([df[:top], df[-top:]])
     # mask1 = df.size_filter != 0
     # mask2 = df.move_filter != 0
     # mask = mask1 & mask2
@@ -56,7 +56,7 @@ def exam_tick(df):
     # df['size_filter'].plot()
     # df['close'].plot(secondary_y=True)
     # plt.show()
-    # plt.savefig('tick_fig/' + fname + '_sizefilter.svg')
+    plt.savefig('tick_fig/' + prod + '_centre_ret.svg')
     # plt.close()
 
 
@@ -78,17 +78,25 @@ def join_folder(folder='data_tick/rb/'):
         if fname[-3:] == 'csv':
             df = calc_tick(load_tick_data(folder, fname))
             df1 = pd.concat([df1, df.dropna()])
+    df1 = df1.sort_values(by='time')
     return df1.reset_index(drop=True)
 
 
 def main():
     # plt.ion()
-    df = join_folder()
-    df.centre_dist.hist()
-    df.size_ratio.hist()
+    # df = join_folder()
+    # df.centre_dist.hist()
+    # df.size_ratio.hist()
     # exam_tick(df)
-    plt.show()
+    # plt.show()
     # plt.savefig('tick_fig/IF.svg')
+
+    for prod in os.listdir('data_tick'):
+        try:
+            df = join_folder('data_tick/' + prod + '/')
+            exam_tick(df, prod=prod)
+        except Exception as e:
+            print(Exception, e)
 
 
 if __name__ == '__main__':

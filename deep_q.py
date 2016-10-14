@@ -28,11 +28,11 @@ def make_states(df):
 
 
 def weight_variable(shape, name):
-    return tf.Variable(tf.truncated_normal(shape, stddev=0.001), name=name)
+    return tf.Variable(tf.truncated_normal(shape, stddev=0.00), name=name)
 
 
 def bias_variable(shape, name):
-    return tf.Variable(tf.constant(0.001, shape=shape), name=name)
+    return tf.Variable(tf.constant(0.00, shape=shape), name=name)
 
 
 def multilayer_nn(x, w, b):
@@ -48,10 +48,7 @@ def multilayer_nn(x, w, b):
     return out_layer
 
 
-def train_nn(mode=None):
-    prod = 'au'
-    prod_type = 'fut'
-
+def train_nn(prod='IF', prod_type='fut', mode=None):
     df = load_time_series(prod, prod_type)
     states = make_states(df)
     # states = states[-400:, :]
@@ -71,7 +68,7 @@ def train_nn(mode=None):
         epochs = 1
         epsilon = 0.0
     else:
-        epochs = 10000
+        epochs = 5000
         epsilon = 1.0
 
     with tf.name_scope('Training_Data'):
@@ -99,13 +96,17 @@ def train_nn(mode=None):
         # saver.restore(sess, 'saved_dqmlp')
         merged = tf.merge_all_summaries()
         writer = tf.train.SummaryWriter('logs/', sess.graph)
-        sess.run(init)
-        checkpoint = tf.train.get_checkpoint_state("saved_networks")
+        checkpoint = tf.train.get_checkpoint_state('saved_networks_{}'.
+                                                   format(prod))
         if checkpoint and checkpoint.model_checkpoint_path:
             saver.restore(sess, checkpoint.model_checkpoint_path)
             print('Successfully loaded:', checkpoint.model_checkpoint_path)
+            # print(sess.run(tf.all_variables()))
+            print(sess.run(w['h1']))
         else:
+            sess.run(init)
             print('Could not find old network weights')
+
         plt.figure()
         # plt.ion()
         # plt.show()
@@ -117,6 +118,7 @@ def train_nn(mode=None):
             reward = []
             for t in range(n_train - 1):
                 q = pred.eval(feed_dict={x: [states[t, :]]})[0]
+                # print(q)
                 a_t = np.zeros([n_classes])
                 if random.random() < epsilon:
                     a_idx = np.random.choice(n_classes)
@@ -156,6 +158,7 @@ def train_nn(mode=None):
                         writer.add_summary(result, epoch*n_train + t)
 
             sharpe = pf.sharpe(pd.Series(states[:n_train, -1]))
+            # print(alist)
             # print(sharpe)
             # print(alist)
             # plt.ion()
@@ -167,13 +170,13 @@ def train_nn(mode=None):
                 plt.show()
             end_time = time.time()
             if epoch % display_step == 0:
-                print('Epoch {}, loss={:.6f}, equity={:.2f},\
-                      sh={:.4f}, time={}'.format(
+                print('Epoch {}, loss={:.6f}, equity={:.2f}, '
+                      'sh={:.4f}, time={}'.format(
                           epoch, avg_loss, states[n_train-1, -1], sharpe,
                           end_time-start_time))
-            if epoch % 100 == 1:
-                saver.save(sess, 'saved_networks/' + prod + '-dqn',
-                           global_step=epoch*n_train)
+            if epoch % 100 == 7:
+                saver.save(sess, 'saved_networks_{}/{}-dqn'.format(prod, prod))
+                # global_step=epoch*n_train)
             if epsilon > 0.1:
                 epsilon -= 1/epochs
 
