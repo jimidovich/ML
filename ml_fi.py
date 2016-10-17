@@ -35,15 +35,16 @@ def read_local_data(prod, prod_type='fut', freq='d1'):
         file = ''
     # file = './CHRIS-CME_ES1.csv'
     df = pd.read_csv(file, dayfirst=True, parse_dates=[0], thousands=',')
-    df = df.dropna()
     if prod_type == 'fut':
         df = df.drop('symbol', axis=1)
+        df = df.drop('amt', axis=1)
         df = df[df.volume != 0]
     if prod_type == 'stock':
         df = df[df.volume != 0]
     # if prod_type != 'fx':
     #     df = df.ix[:, :5].join(df.volume)
     df = df.sort_values(by='time').reset_index(drop=True)
+    df = df.dropna()
     return df
 
 
