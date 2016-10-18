@@ -25,12 +25,15 @@ def group_data():
     prod_list = os.listdir('./data_m1')
     for prod in prod_list:
         if prod[-5:] != 'Store':
+            print(prod)
             data = read_local_data(prod, freq='m1')
             data.index = data.time
-            data = data.close
-            data.name = prod
-            pd.concat([df, data], axis=1)
-            # df[prod] = data.close
+            print(data[data.index.duplicated()])
+            # data = data.close
+            # data.name = prod
+            # pd.concat([df, data], axis=1)
+            df[prod] = data.close
+    return df
 
 
 def main():

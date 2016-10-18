@@ -28,11 +28,11 @@ def make_states(df):
 
 
 def weight_variable(shape, name):
-    return tf.Variable(tf.truncated_normal(shape, stddev=0.00), name=name)
+    return tf.Variable(tf.truncated_normal(shape, stddev=0.001), name=name)
 
 
 def bias_variable(shape, name):
-    return tf.Variable(tf.constant(0.00, shape=shape), name=name)
+    return tf.Variable(tf.constant(0.001, shape=shape), name=name)
 
 
 def multilayer_nn(x, w, b):
@@ -68,7 +68,7 @@ def train_nn(prod='IF', prod_type='fut', mode=None):
         epochs = 1
         epsilon = 0.0
     else:
-        epochs = 5000
+        epochs = 50000
         epsilon = 1.0
 
     with tf.name_scope('Training_Data'):
@@ -131,12 +131,11 @@ def train_nn(prod='IF', prod_type='fut', mode=None):
                 # print('pred-action', preda)
 
                 alist.append(a_t)
-                ret = states[t+1, 0]  # states[0] is roc_1
-                agent_ret = ret * (a_idx - 1)
-                states[t+1, -1] = states[t, -1] * (1 + agent_ret)
+                ret = states[t+1, 0] * (a_idx - 1)  # states[0] is roc_1
+                states[t+1, -1] = states[t, -1] * (1 + ret)
                 sharpe = pf.sharpe(pd.Series(states[t-30:t+2, -1]))\
                     if t > 30 else 0
-                reward.append(agent_ret + gamma * sharpe)
+                reward.append(ret + gamma * sharpe)
 
                 if t > n_observe:
                     minibatch = random.sample(range(t-n_observe, t+1),
