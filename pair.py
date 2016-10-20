@@ -22,8 +22,9 @@ def stationary_spread(y, x):
     spread = y - beta * x
     zscore = (spread[-1] - spread.mean()) / spread.std()
     spread.index = spread.index.astype(str)
-    spread.plot(title='{} - {} * {}'.format(y.name, beta, x.name))
-    plt.savefig('./spread_fig_m1/2000_{}_{}.svg'.format(y.name, x.name))
+    spread.plot(title='{} - {:.4f} * {}, z-score={:.2f}'.
+                format(y.name, beta, x.name, zscore))
+    plt.savefig('./spread_fig_d1/{}_{}.svg'.format(y.name, x.name))
     plt.close()
     return zscore
 
@@ -39,21 +40,22 @@ def coint_matrix(data, window=0):
     for i in range(n):
         for j in range(i+1, n):
             print('\rprocessing {} {} '.format(i, j), end='')
-            y = pd.concat([data[keys[i]], data[keys[j]]], axis=1, join='inner')
-            y = y.dropna()
-            lens[i, j] = y.shape[0]
-            if y.shape[0] > window:
-                scores[i, j], pvalues[i, j], _ = coint(y.ix[-window:, 0],
-                                                       y.ix[-window:, 1])
+            xy = pd.concat([data[keys[i]], data[keys[j]]], axis=1)
+            xy = xy.dropna()
+            y = xy.ix[-window:, 0]
+            x = xy.ix[-window:, 1]
+            lens[i, j] = xy.shape[0]
+            if xy.shape[0] > window:
+                scores[i, j], pvalues[i, j], _ = coint(y, x)
             if pvalues[i, j] < 0.05:
-                pairs.append((keys[i], keys[j]))
-                y.ix[:, 0].plot()
-                y.ix[:, 1].plot(secondary_y=True)
-                plt.savefig('./coint_fig_m1/2000_{}_{}.svg'.
+                y.plot(legend=True, title='p-value={:.4f}'.
+                       format(pvalues[i, j]))
+                x.plot(legend=True, secondary_y=True)
+                plt.savefig('./coint_fig_d1/{}_{}.svg'.
                             format(keys[i], keys[j]))
                 plt.close()
-                zscores[i, j] = stationary_spread(y.ix[-window:, 0],
-                                                  y.ix[-window:, 1])
+                zscores[i, j] = stationary_spread(y, x)
+                pairs.append((keys[i], keys[j], pvalues[i, j], zscores[i, j]))
     return scores, pvalues, pairs, lens, zscores
 
 
@@ -64,7 +66,7 @@ def plot_coint_pair(data, pair):
     y.ix[:, 1].plot(secondary_y=True)
 
 
-def group_data(freq='m1'):
+def group_data(freq='d1'):
     df = pd.DataFrame()
     prod_list = os.listdir('./data_{}'.format(freq))
     for prod in prod_list:
@@ -81,8 +83,7 @@ def group_data(freq='m1'):
 
 def main():
     df = group_data()
-    print(df.head())
-    print(df.tail())
+    scores, pvalues, pairs, lens, zscores = coint_matrix(df)
 
 
 if __name__ == '__main__':
