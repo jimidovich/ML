@@ -20,13 +20,21 @@ def hedge_ratio(y, x, add_const=True):
 def stationary_spread(y, x):
     beta = hedge_ratio(y, x, add_const=True)
     spread = y - beta * x
+    h = hurst(spread.values)
     zscore = (spread[-1] - spread.mean()) / spread.std()
     spread.index = spread.index.astype(str)
-    spread.plot(title='{} - {:.4f} * {}, z-score={:.2f}'.
-                format(y.name, beta, x.name, zscore))
+    spread.plot(title='{} - {:.4f} * {}, hurst={:.4f}, z-score={:.2f}'.
+                format(y.name, beta, x.name, h, zscore))
     plt.savefig('./spread_fig_d1/{}_{}.svg'.format(y.name, x.name))
     plt.close()
     return zscore
+
+
+def hurst(s):
+    lags = range(2, 100)
+    tau = [np.sqrt(np.std(s[lag:] - s[:-lag])) for lag in lags]
+    poly = np.polyfit(np.log(lags), np.log(tau), 1)
+    return poly[0] * 2
 
 
 def coint_matrix(data, window=0):
