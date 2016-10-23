@@ -88,15 +88,15 @@ def plot_coint_pair(data, pair):
 def group_data(freq='d1'):
     df = pd.DataFrame()
     prod_list = os.listdir('./data_{}'.format(freq))
-    for prod in prod_list:
+    for prod in sorted(prod_list):
         if prod[-5:] != 'Store':
             print(prod)
             data = read_local_data(prod, freq=freq)
             data.index = data.time
-            # data = data.close
-            # data.name = prod
-            # pd.concat([df, data], axis=1)
-            df[prod] = data.close
+            data = data.close
+            data.name = prod
+            df = pd.concat([df, data], axis=1, join='outer')
+            # df[prod] = data.close
     return df
 
 
@@ -173,6 +173,62 @@ def grid_test():
                     poses.append(pos)
     pd.to_pickle(equities, './pickle/pair_equities.pkl')
     pd.to_pickle(poses, './pickle/pair_pos.pkl')
+
+
+def kalman_backtest(y, x, begin=50):
+    delta = 1e-5
+    wt = delta / (1-delta) * np.eye(2)
+    vt = 1e-3
+    theta = np.zeros(2)
+    C = np.zeros((2, 2))
+    R = None
+
+    has_pos = False
+    pos = pd.DataFrame(0.0, index=y.index, columns=['ypos', 'xpos'])
+    et = pd.Series(index=y.index)
+    beta = pd.Series(index=y.index)
+    spread = pd.Series(index=y.index)
+
+    for t in range(len(y)):
+        F = np.asarray([x.iloc[t], 1.0]).reshape((1, 2))
+        R = C + wt if R is not None else np.zeros((2, 2))
+        yhat = F.dot(theta)
+        e = y.iloc[t] - yhat
+        Q = F.dot(R).dot(F.T) + vt
+        A = R.dot(F.T) / Q
+        C = R - A * F.dot(R)
+        theta = theta + A.flatten() * e
+        # et.append(np.sqrt(Q)[0][0])
+        et.iloc[t] = e[0]/np.sqrt(Q)[0][0]
+        beta.iloc[t] = theta[0]
+        spread.iloc[t] = y.iloc[t] - theta[0] * x.iloc[t]
+
+        if abs(e) > 2*np.sqrt(Q) and t > begin:
+            pos['ypos'].iloc[t] = -np.sign(e)
+            pos['xpos'].iloc[t] = np.sign(e) * theta[0]
+    df = pd.concat([y, x], axis=1)
+    equity = (df.diff() * pos.shift(1).values).sum(axis=1).cumsum()
+    equity.plot()
+    plt.savefig('./kalman_fig_m1/{}_{}.svg'.format(y.name, x.name))
+    plt.close()
+    # spread.iloc[50:].plot()
+    # y.iloc[50:].plot(secondary_y=True)
+    # plt.show()
+    return equity, pos
+
+
+def test_kalman_coint(data, pairs):
+    # data = group_data()
+    # pairs = coint_matrix(data)[0]
+    for pair in pairs:
+        print(pair)
+        yname, xname = pair[0], pair[1]
+        y = pd.concat([data[yname], data[xname]], axis=1).dropna()[yname]
+        x = pd.concat([data[yname], data[xname]], axis=1).dropna()[xname]
+        try:
+            kalman_backtest(y, x)
+        except Exception as e:
+            print(e)
 
 
 def main():
