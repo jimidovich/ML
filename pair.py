@@ -32,10 +32,13 @@ def stationary_spread(y, x, plot=False):
 
 
 def hurst(s):
-    lags = range(2, 100)
-    tau = [np.sqrt(np.std(s[lag:] - s[:-lag])) for lag in lags]
-    poly = np.polyfit(np.log(lags), np.log(tau), 1)
-    return poly[0] * 2
+    if len(s) >= 100:
+        lags = range(2, 100)
+        tau = [np.sqrt(np.std(s[lag:] - s[:-lag])) for lag in lags]
+        poly = np.polyfit(np.log(lags), np.log(tau), 1)
+        return poly[0] * 2
+    else:
+        return 0
 
 
 def coint_matrix(data, window=0, plot=False):
@@ -56,7 +59,10 @@ def coint_matrix(data, window=0, plot=False):
             x = xy.ix[-window:, 1]
             lens[i, j] = xy.shape[0]
             if xy.shape[0] > window:
-                scores[i, j], pvalues[i, j], _ = coint(y, x)
+                try:
+                    scores[i, j], pvalues[i, j], _ = coint(y, x)
+                except Exception as e:
+                    print(Exception, e)
             if pvalues[i, j] < 0.05:
                 if plot:
                     y.plot(legend=True, title='p-value={:.4f}'.
@@ -65,7 +71,8 @@ def coint_matrix(data, window=0, plot=False):
                     plt.savefig('./coint_fig_d1/{}_{}.svg'.
                                 format(keys[i], keys[j]))
                     plt.close()
-                zscores[i, j], hursts[i, j], _ = stationary_spread(y, x)
+                zscores[i, j], hursts[i, j], _ = stationary_spread(y, x,
+                                                                   plot=True)
                 pairs.append((keys[i], keys[j], pvalues[i, j], hursts[i, j],
                               lens[i, j], zscores[i, j]))
     return pairs, scores, pvalues, hursts, lens, zscores
@@ -93,28 +100,79 @@ def group_data(freq='d1'):
     return df
 
 
+def update_trade_pos(y, x, pos, t, z_entry, z_exit, last_pos, new_pos):
+    beta = hedge_ratio(y, x, add_const=True)
+    spread = y - beta * x
+    zscore = (spread[-1] - spread.mean()) / spread.std()
+    if abs(zscore) > z_entry or \
+            (z_exit < abs(zscore) < z_entry and
+                (y.name, x.name) in last_pos):
+        pos[y.name].iloc[t] += -np.sign(zscore) / spread.std()
+        pos[x.name].iloc[t] += beta*np.sign(zscore) / spread.std()
+        new_pos.add((y.name, x.name))
+
+
 def backtest_strategy(data, start=250, end=1000,
                       zlookback=100, nmax=4, z_entry=2, z_exit=1):
+    pos = pd.DataFrame(0.0, index=data.index, columns=data.columns)
+    last_pos = set()
+    new_pos = set()
     for t in range(start, end):
-        df = data[:t]
-        res = coint_matrix(df)
-        pairs = pd.DataFrame(res[0], columns=['s1', 's2', 'pvalue',
-                                              'hurst', 'lens', 'z_all'])
-        pairs = pairs[pairs.lens > zlookback]
-        pairs.sort_values(by='pvalue', inplace=True)
-        if pairs.shape[0] == 0:
-            continue
-        n = 0
+        print('\r                  t={}'.format(t), end='')
+        df = data[:t+1].dropna(axis=1, how='all')
+        dfw = df[-zlookback:]  # df window
+        for (yname, xname) in last_pos:
+            y = dfw[yname]
+            x = dfw[xname]
+            if coint(y, x)[1] < 0.2:  # p-value exit threshold
+                update_trade_pos(y, x, pos, t, z_entry, z_exit,
+                                 last_pos, new_pos)
+
+        if len(new_pos) < nmax and t % 10 == 0:
+            res = coint_matrix(df)
+            pairs = pd.DataFrame(res[0], columns=['s1', 's2', 'pvalue',
+                                                  'hurst', 'lens', 'z_all'])
+            pairs = pairs[pairs.lens > zlookback]
+            pairs.sort_values(by='pvalue', inplace=True)
+            pairs.reset_index(inplace=True)
+            if pairs.shape[0] == 0:
+                continue
         i = 0
-        df1 = df[-zlookback:]
-        while((n < nmax) and (i < pairs.shape[0])):
-            y = df1[pairs['s1']]
-            x = df1[pairs['s2']]
-            beta = hedge_ratio(y, x, add_const=True)
-            spread = y - beta * x
-            zscore = (spread[-1] - spread.mean()) / spread.std()
-            if abs(zscores) > zthresh:
-                pass
+        while len(new_pos) < nmax and i < pairs.shape[0]:
+            if (pairs['s1'][i], pairs['s2'][i]) not in new_pos:
+                y = dfw[pairs['s1'][i]]
+                x = dfw[pairs['s2'][i]]
+                update_trade_pos(y, x, pos, t, z_entry, z_exit,
+                                 last_pos, new_pos)
+                # else pos is already set as 0
+                # TODO keep traded pairs position, not replaced by new rank
+            i += 1
+        last_pos = new_pos
+        new_pos.clear()
+    equity = (data.diff() * pos.shift(1)).sum(axis=1).cumsum()
+    equity.plot()
+    # plt.show()
+    plt.savefig('./btfig/{}_{}_{}_{}.svg'.
+                format(nmax, zlookback, z_entry, z_exit))
+    plt.close()
+    return equity, pos
+
+
+def grid_test():
+    data = group_data()
+    equities = []
+    poses = []
+    for nmax in range(1, 5):
+        for zlookback in range(100, 350, 100):
+            for z_entry in range(2, 5):
+                for z_exit in [0.2, 0.5, 1, 1.5]:
+                    e, pos = backtest_strategy(data, start=2000, end=4000,
+                                               nmax=nmax, zlookback=zlookback,
+                                               z_entry=z_entry, z_exit=z_exit)
+                    equities.append(e)
+                    poses.append(pos)
+    pd.to_pickle(equities, './pickle/pair_equities.pkl')
+    pd.to_pickle(poses, './pickle/pair_pos.pkl')
 
 
 def main():
