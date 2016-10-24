@@ -95,6 +95,8 @@ def group_data(freq='d1'):
         if prod[-5:] != 'Store':
             print(prod)
             data = read_local_data(prod, freq=freq)
+            # if prod not in {'IF', 'IH', 'IC', 'T', 'TF'}:
+            #     data = data[data.volume != data.volume.shift(1)]
             data.index = data.time
             data = data.close
             data.name = prod
@@ -179,6 +181,8 @@ def grid_test():
 
 
 def kalman_backtest(y, x, begin=50):
+    # y = y[:10000]
+    # x = x[:10000]
     delta = 1e-5
     wt = delta / (1-delta) * np.eye(2)
     vt = 1e-3
@@ -187,10 +191,9 @@ def kalman_backtest(y, x, begin=50):
     R = None
 
     # has_pos = False
-    pos = pd.DataFrame(0.0, index=y.index, columns=['ypos', 'xpos'])
-    et = pd.Series(index=y.index)
-    beta = pd.Series(index=y.index)
-    spread = pd.Series(index=y.index)
+    df = pd.DataFrame(0.0, index=y.index, columns=['ypos', 'xpos', 'ez',
+                                                   'beta', 'spread'])
+    df = pd.concat([y, x, df], axis=1)
 
     for t in range(len(y)):
         print('\rt={}/{}'.format(t, len(y)), end='')
@@ -203,32 +206,42 @@ def kalman_backtest(y, x, begin=50):
         C = R - A * F.dot(R)
         theta = theta + A.flatten() * e
         # et.append(np.sqrt(Q)[0][0])
-        et.iloc[t] = e[0]/np.sqrt(Q)[0][0]
-        beta.iloc[t] = theta[0]
-        spread.iloc[t] = y.iloc[t] - theta[0] * x.iloc[t]
+        df['ez'].iloc[t] = e[0]/np.sqrt(Q)[0][0]
+        df['beta'].iloc[t] = theta[0]
+        df['spread'].iloc[t] = y.iloc[t] - theta[0] * x.iloc[t]
 
-        if abs(e) > 2*np.sqrt(Q) and t > begin:
-            pos['ypos'].iloc[t] = -np.sign(e)
-            pos['xpos'].iloc[t] = np.sign(e) * theta[0]
-    df = pd.concat([y, x], axis=1)
-    equity = (df.diff() * pos.shift(1).values).sum(axis=1).cumsum()
-    (equity / y.mean()).plot(title=y.mean())
-    plt.savefig('./kalman_fig_m1/{}_{}.svg'.format(y.name, x.name))
+        # if abs(e) > 2*np.sqrt(Q) and t > begin:
+        #     pos['ypos'].iloc[t] = -np.sign(e)
+        #     pos['xpos'].iloc[t] = np.sign(e) * theta[0]
+    df['ez_thresh'] = (abs(df['ez']).rolling(300).quantile(0.75))
+    df['ypos'] = df.apply(lambda x: -np.sign(x['ez'])
+                          if abs(x['ez']) > abs(x['ez_thresh'])
+                          else 0, axis=1)
+    df['ypos'] *= 100
+    df['xpos'] = round(-df['ypos'] * df['beta'])
+
+    prices = pd.concat([y, x], axis=1)
+    pos = df[['ypos', 'xpos']]
+    df['pnl'] = (prices.diff() * pos.shift(1).values).sum(axis=1)
+    df['equity'] = df['pnl'].cumsum()
+    (df['equity'] / y.mean()).plot(title='median et, {}'.format(y.mean()))
+    plt.savefig('./kalman_fig_m1_test/{}_{}.svg'.format(y.name, x.name))
     plt.close()
     # spread.iloc[50:].plot()
     # y.iloc[50:].plot(secondary_y=True)
     # plt.show()
-    pd.concat([y, x, pos, et, beta, equity], axis=1).\
-        to_csv('./check_kf_bt.csv')
-    return pd.concat([y, x, pos, et, beta, equity], axis=1)
+    df.to_csv('./df_kfres/{}_{}.csv'.format(y.name, x.name))
+    return df
 
 
 def test_kalman_coint(data, pairs):
     # data = group_data()
     # pairs = coint_matrix(data)[0]
     for pair in pairs:
-        print(pair)
+        print('\n', pair)
         yname, xname = pair[0], pair[1]
+        # if (yname, xname) != ('i', 'y'):
+        #     continue
         y = pd.concat([data[yname], data[xname]], axis=1).dropna()[yname]
         x = pd.concat([data[yname], data[xname]], axis=1).dropna()[xname]
         try:
