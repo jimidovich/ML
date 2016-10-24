@@ -75,6 +75,9 @@ def coint_matrix(data, window=0, plot=False):
                                                                    plot=True)
                 pairs.append((keys[i], keys[j], pvalues[i, j], hursts[i, j],
                               lens[i, j], zscores[i, j]))
+    pairs = pd.DataFrame(pairs, columns=['y', 'x', 'pvalue', 'hurst',
+                                         'len', 'zscore'])
+    pairs = pairs.sort_values(by='pvalue').values
     return pairs, scores, pvalues, hursts, lens, zscores
 
 
@@ -183,13 +186,14 @@ def kalman_backtest(y, x, begin=50):
     C = np.zeros((2, 2))
     R = None
 
-    has_pos = False
+    # has_pos = False
     pos = pd.DataFrame(0.0, index=y.index, columns=['ypos', 'xpos'])
     et = pd.Series(index=y.index)
     beta = pd.Series(index=y.index)
     spread = pd.Series(index=y.index)
 
     for t in range(len(y)):
+        print('\rt={}/{}'.format(t, len(y)), end='')
         F = np.asarray([x.iloc[t], 1.0]).reshape((1, 2))
         R = C + wt if R is not None else np.zeros((2, 2))
         yhat = F.dot(theta)
@@ -208,13 +212,15 @@ def kalman_backtest(y, x, begin=50):
             pos['xpos'].iloc[t] = np.sign(e) * theta[0]
     df = pd.concat([y, x], axis=1)
     equity = (df.diff() * pos.shift(1).values).sum(axis=1).cumsum()
-    equity.plot()
+    (equity / y.mean()).plot(title=y.mean())
     plt.savefig('./kalman_fig_m1/{}_{}.svg'.format(y.name, x.name))
     plt.close()
     # spread.iloc[50:].plot()
     # y.iloc[50:].plot(secondary_y=True)
     # plt.show()
-    return equity, pos
+    pd.concat([y, x, pos, et, beta, equity], axis=1).\
+        to_csv('./check_kf_bt.csv')
+    return pd.concat([y, x, pos, et, beta, equity], axis=1)
 
 
 def test_kalman_coint(data, pairs):
