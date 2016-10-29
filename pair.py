@@ -77,7 +77,7 @@ def coint_matrix(data, window=0, plot=False):
                               lens[i, j], zscores[i, j]))
     pairs = pd.DataFrame(pairs, columns=['y', 'x', 'pvalue', 'hurst',
                                          'len', 'zscore'])
-    pairs = pairs.sort_values(by='pvalue').values
+    pairs = pairs.sort_values(by='pvalue')
     return pairs, scores, pvalues, hursts, lens, zscores
 
 
@@ -88,7 +88,7 @@ def plot_coint_pair(data, pair):
     y.ix[:, 1].plot(secondary_y=True)
 
 
-def group_data(freq='d1'):
+def group_data(freq='m1'):
     df = pd.DataFrame()
     prod_list = os.listdir('./data_{}'.format(freq))
     for prod in sorted(prod_list):
@@ -225,19 +225,19 @@ def kalman_backtest(y, x, begin=50):
     df['pnl'] = (prices.diff() * pos.shift(1).values).sum(axis=1)
     df['equity'] = df['pnl'].cumsum()
     (df['equity'] / y.mean()).plot(title='median et, {}'.format(y.mean()))
-    plt.savefig('./kalman_fig_m1_test/{}_{}.svg'.format(y.name, x.name))
+    plt.savefig('./kalman_fig_m1_test_1e5/{}_{}.svg'.format(y.name, x.name))
     plt.close()
     # spread.iloc[50:].plot()
     # y.iloc[50:].plot(secondary_y=True)
     # plt.show()
-    df.to_csv('./df_kfres/{}_{}.csv'.format(y.name, x.name))
+    df.to_csv('./df_kfres_1e5/{}_{}.csv'.format(y.name, x.name))
     return df
 
 
 def test_kalman_coint(data, pairs):
     # data = group_data()
     # pairs = coint_matrix(data)[0]
-    for pair in pairs:
+    for pair in pairs.values:
         print('\n', pair)
         yname, xname = pair[0], pair[1]
         # if (yname, xname) != ('i', 'y'):
