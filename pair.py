@@ -215,7 +215,7 @@ def kalman_signal(y, x, begin=50):
     return df
 
 
-def signal_trade(kal):
+def signal_trade(kal, plot=True):
     fut_info = pd.read_csv('./fut_info_df.csv')
     fut_info = fut_info.set_index('prod')
     yname, xname = kal.columns[1:3]
@@ -238,22 +238,43 @@ def signal_trade(kal):
                   kal[xname].max() * fut_info.ix[xname, 'margin']/100 *
                   kal.xpos.max()) + kal.equity
     kal['ret'] = np.log(kal.cap).diff()
+    kal = kal.dropna()
 
-    kal.cap.index = kal.time
-    kal.cap.index = kal.cap.index.astype('datetime64')
-    dret = kal.cap.resample('1D').pad()
-    dret = np.log(dret).diff()
-    dsharpe = dret.mean() / dret.std() * np.sqrt(252)
+    if plot:
+        sns.set_style('darkgrid')
+        fig, ax1 = plt.subplots()
+        ax2 = ax1.twinx()
+        ax1.plot(kal.pnl.cumsum(), label='pnl')
+        ax1.plot((kal.ycomm + kal.xcomm).cumsum(), label='commission')
+        # plt.legend(loc=0)
+        ax2.plot(kal.cap * 100 / kal.iloc[0]['cap'], 'coral', label='cap (right)')
+        ax2.grid(None)
+        lines, labels = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax2.legend(lines + lines2, labels + labels2, loc=0)
 
-    sns.set_style('dark')
-    kal.cap * 100 / kal.iloc[0, 'cap'].plot()
-    kal.pnl.cumsum().plot()
-    (kal.ycomm + kal.xcomm).cumsum().plot(label='commission')
-    plt.legend(loc=0)
-    kal.no_trade.plot(secondary_y=True)
-    plt.title('dsharpe={}'.format(dsharpe))
-    plt.savefig('./kalman_fig_m1_test/2e5/{}_{}.svg'.format(yname, xname))
+        kal.cap.index = kal.time
+        kal.cap.index = kal.cap.index.astype('datetime64')
+        dret = kal.cap.resample('1D').pad()
+        dret = np.log(dret).diff()
+        dsharpe = dret.mean() / dret.std() * np.sqrt(252)
+        plt.title('{}_{}, dsharpe={:.4f}, days={}, trade/day={:.2f}'.format(
+            yname, xname, dsharpe, dret.shape[0],
+            kal.iloc[-1]['no_trade'] / dret.shape[0]))
+        plt.savefig('./kalman_fig_m1_test/2e5/{}_{}.svg'.format(yname, xname))
+        plt.close()
     return kal
+
+
+def all_signal_trade(pairs):
+    for i in pairs.index:
+        print(pairs.ix[i, :])
+        try:
+            kal = pd.read_csv('./df_kfres/2e5/{}_{}.csv'.format(
+                pairs.ix[i, 'y'], pairs.ix[i, 'x']))
+            signal_trade(kal)
+        except Exception as e:
+            print(e)
 
 
 def test_kalman_coint(data, pairs):
