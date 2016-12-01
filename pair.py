@@ -3,6 +3,7 @@ import sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
 import statsmodels.api as sm
 from statsmodels.tsa.stattools import coint
 from ml_fi import read_local_data
@@ -78,6 +79,7 @@ def coint_matrix(data, window=0, plot=False):
     pairs = pd.DataFrame(pairs, columns=['y', 'x', 'pvalue', 'hurst',
                                          'len', 'zscore'])
     pairs = pairs.sort_values(by='pvalue')
+    pairs = pairs.reset_index(drop=True)
     return pairs, scores, pvalues, hursts, lens, zscores
 
 
@@ -180,7 +182,7 @@ def grid_test():
     pd.to_pickle(poses, './pickle/pair_pos.pkl')
 
 
-def kalman_backtest(y, x, begin=50):
+def kalman_signal(y, x, begin=50):
     # y = y[:10000]
     # x = x[:10000]
     delta = 1e-5
@@ -191,8 +193,7 @@ def kalman_backtest(y, x, begin=50):
     R = None
 
     # has_pos = False
-    df = pd.DataFrame(0.0, index=y.index, columns=['ypos', 'xpos', 'ez',
-                                                   'beta', 'spread'])
+    df = pd.DataFrame(0.0, index=y.index, columns=['ez', 'beta', 'spread'])
     df = pd.concat([y, x, df], axis=1)
 
     for t in range(len(y)):
@@ -210,28 +211,70 @@ def kalman_backtest(y, x, begin=50):
         df['beta'].iloc[t] = theta[0]
         df['spread'].iloc[t] = y.iloc[t] - theta[0] * x.iloc[t]
 
-        # if abs(e) > 2*np.sqrt(Q) and t > begin:
-        #     pos['ypos'].iloc[t] = -np.sign(e)
-        #     pos['xpos'].iloc[t] = np.sign(e) * theta[0]
-    df['ez_thresh'] = (abs(df['ez']).rolling(300).quantile(0.75))
-    df['ypos'] = df.apply(lambda x: -np.sign(x['ez'])
-                          if abs(x['ez']) > abs(x['ez_thresh'])
-                          else 0, axis=1)
-    df['ypos'] *= 100
-    df['xpos'] = round(-df['ypos'] * df['beta'])
-
-    prices = pd.concat([y, x], axis=1)
-    pos = df[['ypos', 'xpos']]
-    df['pnl'] = (prices.diff() * pos.shift(1).values).sum(axis=1)
-    df['equity'] = df['pnl'].cumsum()
-    (df['equity'] / y.mean()).plot(title='median et, {}'.format(y.mean()))
-    plt.savefig('./kalman_fig_m1_test_1e5/{}_{}.svg'.format(y.name, x.name))
-    plt.close()
-    # spread.iloc[50:].plot()
-    # y.iloc[50:].plot(secondary_y=True)
-    # plt.show()
-    df.to_csv('./df_kfres_1e5/{}_{}.csv'.format(y.name, x.name))
+    df.to_csv('./df_kfres/2e5/{}_{}.csv'.format(y.name, x.name))
     return df
+
+
+def signal_trade(kal, plot=True):
+    fut_info = pd.read_csv('./fut_info_df.csv')
+    fut_info = fut_info.set_index('prod')
+    yname, xname = kal.columns[1:3]
+    kal['ez_thresh'] = abs(kal.ez.rolling(600).quantile(0.999))
+    kal['ypos'] = kal.apply(lambda x: -np.sign(x['ez'])
+                            if abs(x['ez']) > abs(x['ez_thresh'])
+                            else 0, axis=1) * 100
+    kal['xpos'] = round(-kal['ypos'] * kal['beta'])
+    kal['ycomm'] = abs(kal.ypos.diff()) * kal[yname] *\
+        fut_info.ix[yname, 'comm/val%%'] / 1e4
+    kal['xcomm'] = abs(kal.xpos.diff()) * kal[xname] *\
+        fut_info.ix[xname, 'comm/val%%'] / 1e4
+    kal['pnl'] = kal[yname].diff() * kal.ypos.shift(1) +\
+        kal[xname].diff() * kal.xpos.shift(1)
+    kal['netpnl'] = kal.pnl - kal.ycomm - kal.xcomm
+    kal['equity'] = kal.netpnl.cumsum()
+    kal['no_trade'] = kal.apply(lambda x: 1 if x['ycomm'] != 0
+                                else 0, axis=1).cumsum() / 2
+    kal['cap'] = (kal[yname].max() * fut_info.ix[yname, 'margin'] +
+                  kal[xname].max() * fut_info.ix[xname, 'margin']/100 *
+                  kal.xpos.max()) + kal.equity
+    kal['ret'] = np.log(kal.cap).diff()
+    kal = kal.dropna()
+
+    if plot:
+        sns.set_style('darkgrid')
+        fig, ax1 = plt.subplots()
+        ax2 = ax1.twinx()
+        ax1.plot(kal.pnl.cumsum(), label='pnl')
+        ax1.plot((kal.ycomm + kal.xcomm).cumsum(), label='commission')
+        # plt.legend(loc=0)
+        ax2.plot(kal.cap * 100 / kal.iloc[0]['cap'], 'coral', label='cap (right)')
+        ax2.grid(None)
+        lines, labels = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax2.legend(lines + lines2, labels + labels2, loc=0)
+
+        kal.cap.index = kal.time
+        kal.cap.index = kal.cap.index.astype('datetime64')
+        dret = kal.cap.resample('1D').pad()
+        dret = np.log(dret).diff()
+        dsharpe = dret.mean() / dret.std() * np.sqrt(252)
+        plt.title('{}_{}, dsharpe={:.4f}, days={}, trade/day={:.2f}'.format(
+            yname, xname, dsharpe, dret.shape[0],
+            kal.iloc[-1]['no_trade'] / dret.shape[0]))
+        plt.savefig('./kalman_fig_m1_test/2e5/{}_{}.svg'.format(yname, xname))
+        plt.close()
+    return kal
+
+
+def all_signal_trade(pairs):
+    for i in pairs.index:
+        print(pairs.ix[i, :])
+        try:
+            kal = pd.read_csv('./df_kfres/2e5/{}_{}.csv'.format(
+                pairs.ix[i, 'y'], pairs.ix[i, 'x']))
+            signal_trade(kal)
+        except Exception as e:
+            print(e)
 
 
 def test_kalman_coint(data, pairs):
@@ -245,14 +288,16 @@ def test_kalman_coint(data, pairs):
         y = pd.concat([data[yname], data[xname]], axis=1).dropna()[yname]
         x = pd.concat([data[yname], data[xname]], axis=1).dropna()[xname]
         try:
-            kalman_backtest(y, x)
+            kalman_signal(y, x)
         except Exception as e:
             print(e)
 
 
 def main():
     df = group_data()
-    scores, pvalues, pairs, lens, zscores = coint_matrix(df)
+    df = df[-200000:]
+    pairs = coint_matrix(df)[0]
+    test_kalman_coint(df, pairs)
 
 
 if __name__ == '__main__':
