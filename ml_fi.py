@@ -6,6 +6,7 @@ Created on Fri Sep  2 13:38:44 2016
 """
 
 import sys
+import os
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -35,26 +36,29 @@ def read_local_data(prod, prod_type='fut', freq='d1'):
         file = ''
     # file = './CHRIS-CME_ES1.csv'
     df = pd.read_csv(file, dayfirst=True, parse_dates=[0], thousands=',')
+    df = df.sort_values(by='time').reset_index(drop=True)
+    df = df.dropna()
     if prod_type == 'fut':
         df = df.drop('symbol', axis=1)
         df = df.drop('amt', axis=1)
         df = df[df.volume != 0]
+        if prod not in {'IF', 'IH', 'IC', 'T', 'TF'}:
+            df = df[df.volume != df.volume.shift(1)]
     if prod_type == 'stock':
         df = df[df.volume != 0]
     # if prod_type != 'fx':
     #     df = df.ix[:, :5].join(df.volume)
-    df = df.sort_values(by='time').reset_index(drop=True)
-    df = df.dropna()
+    df = df.reset_index(drop=True)
     return df
 
 
 def add_features(df):
     df['intercept'] = 1
     # df['turn_f'] = df.turn
-    # df = af.add_sma_diff(df)
+    df = af.add_sma_diff(df)
     # df = af.add_volume_sma_diff(df)
     # df = af.add_turn_sma_diff(df)
-    df = af.add_open_gap(df)
+    # df = af.add_open_gap(df)
     return df
 
 
@@ -284,14 +288,16 @@ def show_grid_results(res):
                         aggfunc='max')
     plt.figure()
     sns.heatmap(d2)
-    plt.show()
+    # plt.show()
+    plt.savefig('./fig1/a_grid.svg')
     print(res[res['sharpe'] > 1])
 
 
-def single_test(prod, prod_type='fut', freq='d1', days=1, tp=1.02, sl=1.01,
-                th=0.002, k=400, n=30, idx_begin=90, allow_trade=None):
+def single_test(prod, prod_type='fut', freq='d1', days=40, tp=0.20, sl=0.05,
+                th=0.002, k=800, n=30, idx_begin=90, allow_trade=None):
     if prod_type == 'stock':
         allow_trade = 'long'
+    # allow_trade = None  # allow short for target making?
     test_begin = idx_begin + days + k
     df = read_local_data(prod, prod_type, freq)
     df = add_features(df)
@@ -307,17 +313,19 @@ def single_test(prod, prod_type='fut', freq='d1', days=1, tp=1.02, sl=1.01,
     show_model(prod, df, ytest, ypred, yproba, score_list,
                sharpe, sharpe1, equity, equity1)
     # plt.show()
-    return pd.concat([df.time, pd.concat([ytest, ypred, yproba], axis=1)],
+    return pd.concat([df.time, df.close, pd.concat([ytest, ypred, yproba],
+                                                   axis=1)],
                      axis=1, join='inner')
 
 
 def grid_test(prod_list, prod_type='fut', freq='d1', days_list={40},
-              tp_list={0.20}, sl_list={0.05}, th_list={0.01},
+              tp_list={0.20}, sl_list=[0.05], th_list={0.01},
               k_list={300}, n_list={30}, allow_trade=None):
     if prod_type == 'stock':
         allow_trade = 'long'
     idx_begin = 90
     scores = []
+    targets = {}
     for prod in prod_list:
         print(prod)
         df = read_local_data(prod, prod_type, freq)
@@ -330,12 +338,21 @@ def grid_test(prod_list, prod_type='fut', freq='d1', days_list={40},
                                  for s in sl_list for h in th_list]:
             if (th <= tp) & (len(df) > idx_begin) &\
                     ((sl <= tp) | (sl == sl_list[-1])):
-                target = make_target(df[idx_begin:].close, days, tp, sl, th)
+
+                f = './targets/{}.pkl'.format(prod)
+                if os.path.exists(f):
+                    target = pd.read_pickle(f)
+                else:
+                    target = make_target(df[idx_begin:].close,
+                                         days, tp, sl, th)
+                    target.to_pickle(f)
+
                 for k, n in [(k, n) for k in k_list for n in n_list]:
                     try:
                         ypred, yproba, ytest = model_predict(
                             X, target, days, k, n, test_begin,
                             allow_trade=allow_trade, model='logit')
+                        yproba.to_pickle('./yproba/{}_proba.pkl'.format(prod))
                         score_list, sharpe, sharpe1, equity, equity1 =\
                             performance(df, target, ypred, days)
                         scores.append([prod, days, tp, sl, th, k, n] +
@@ -345,22 +362,36 @@ def grid_test(prod_list, prod_type='fut', freq='d1', days_list={40},
     res = scores_df(scores)
     print(res)
     show_grid_results(res)
-    # res.to_pickle('./pickle/ashare_all.pkl')
+    res.to_pickle('./pickle/ashare_all.pkl')
     return res
 
 
+def merge_proba():
+    proba_prods = os.listdir('./yproba/')
+    merge_group = []
+    for p in proba_prods:
+        prod = p[:9]
+        proba = pd.read_pickle('./yproba/'+p)
+        stock = read_local_data(prod, 'stock', 'd1')
+        joined = stock.join(proba)
+        joined = joined.set_index('time', drop=True)
+        joined = joined[['p_sell', 'p_pass', 'p_buy']]
+        joined.columns = pd.MultiIndex.from_product([[prod], joined.columns])
+        merge_group.append(joined)
+    return pd.concat(merge_group, axis=1)
+
+
 def main():
-    if len(sys.argv) <= 10:
-        pres = single_test(*sys.argv[1:])
-    print(pres.describe())
-    print(pres.head())
-    print(pres.tail())
+    # if len(sys.argv) <= 10:
+    #     pres = single_test(*sys.argv[1:])
+    # print(pres.describe())
+    # print(pres.head())
+    # print(pres.tail())
     # grid_test(['rb'])
-    # prod_list = pd.read_csv('./data_ashares_d1/code_list.csv,
-    #                         names=['code'])
-    # prod_list = prod_list[:]
-    # grid_test(prod_list, prod_type='stock')
-    plt.show()
+    prod_list = pd.read_csv('./data_ashares_d1/code_list.csv', header=None)
+    prod_list = prod_list[0].sort_values()
+    grid_test(prod_list, prod_type='stock')
+    # plt.show()
 
 
 if __name__ == '__main__':
