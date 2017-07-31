@@ -73,7 +73,7 @@ def coint_matrix(data, window=0, plot=False):
                                 format(keys[i], keys[j]))
                     plt.close()
                 zscores[i, j], hursts[i, j], _ = stationary_spread(y, x,
-                                                                   plot=True)
+                                                                   plot=plot)
                 pairs.append((keys[i], keys[j], pvalues[i, j], hursts[i, j],
                               lens[i, j], zscores[i, j]))
     pairs = pd.DataFrame(pairs, columns=['y', 'x', 'pvalue', 'hurst',
@@ -92,15 +92,18 @@ def plot_coint_pair(data, pair):
 
 def group_data(freq='m1'):
     df = pd.DataFrame()
-    prod_list = os.listdir('./data_{}'.format(freq))
+    folder = 'd:/mkt_data/csv/data_fut_m1/'
+    # prod_list = os.listdir('./data_{}'.format(freq))
+    prod_list = os.listdir(folder)
     for prod in sorted(prod_list):
         if prod[-5:] != 'Store':
             print(prod)
-            data = read_local_data(prod, freq=freq)
+            # data = read_local_data(prod, freq=freq)
             # if prod not in {'IF', 'IH', 'IC', 'T', 'TF'}:
             #     data = data[data.volume != data.volume.shift(1)]
-            data.index = data.time
-            data = data.close
+            data = pd.read_csv(folder + prod + '/' + prod + '_m1.csv',
+                               index_col='time', parse_dates=True)
+            data = data.adj_close
             data.name = prod
             df = pd.concat([df, data], axis=1, join='outer')
             # df[prod] = data.close
@@ -196,21 +199,35 @@ def kalman_signal(y, x, begin=50):
     df = pd.DataFrame(0.0, index=y.index, columns=['ez', 'beta', 'spread'])
     df = pd.concat([y, x, df], axis=1)
 
+    yv = y.values
+    xv = x.values
+    ezv = np.zeros_like(yv)
+    betav = np.zeros_like(yv)
+    spreadv = np.zeros_like(yv)
     for t in range(len(y)):
         print('\rt={}/{}'.format(t, len(y)), end='')
-        F = np.asarray([x.iloc[t], 1.0]).reshape((1, 2))
+        # F = np.asarray([x.iloc[t], 1.0]).reshape((1, 2))
+        F = np.asarray([xv[t], 1.0]).reshape((1, 2))
         R = C + wt if R is not None else np.zeros((2, 2))
         yhat = F.dot(theta)
-        e = y.iloc[t] - yhat
+        # e = y.iloc[t] - yhat
+        e = yv[t] - yhat
         Q = F.dot(R).dot(F.T) + vt
         A = R.dot(F.T) / Q
         C = R - A * F.dot(R)
         theta = theta + A.flatten() * e
         # et.append(np.sqrt(Q)[0][0])
-        df['ez'].iloc[t] = e[0]/np.sqrt(Q)[0][0]
-        df['beta'].iloc[t] = theta[0]
-        df['spread'].iloc[t] = y.iloc[t] - theta[0] * x.iloc[t]
 
+        # df['ez'].iloc[t] = e[0]/np.sqrt(Q)[0][0]
+        # df['beta'].iloc[t] = theta[0]
+        # df['spread'].iloc[t] = yv[t] - theta[0] * xv[t]
+        ezv[t] = e[0]/np.sqrt(Q)[0][0]
+        betav[t] = theta[0]
+        spreadv[t] = yv[t] - theta[0] * xv[t]
+
+    df['ez'] = ezv
+    df['beta'] = betav
+    df['spread'] = spreadv
     df.to_csv('./df_kfres/2e5/{}_{}.csv'.format(y.name, x.name))
     return df
 
